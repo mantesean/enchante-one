@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+const FOUNDING_ACCESS_PRICE = "$990";
+
 export default function Home() {
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,7 +74,7 @@ export default function Home() {
             <div className="pt-4 border-t border-zinc-800">
               <p className="text-sm text-zinc-400 mb-4">Unlock the full intelligence, recommended next action, and founding company status.</p>
               <button className="w-full py-3 bg-white text-black rounded-full text-sm font-medium">
-                Founding Access · 4 900 CZK
+                Founding Access · {FOUNDING_ACCESS_PRICE}
               </button>
               <p className="text-xs text-zinc-600 mt-3 text-center">Limited to 50 founding companies. Includes 12 months of updates and lifetime founding rate.</p>
             </div>
