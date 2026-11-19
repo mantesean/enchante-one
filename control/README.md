@@ -1,15 +1,9 @@
-# ENCH CONTROL — Genesis
+# Retired ENCH CONTROL prototype
 
-Minimal auditable intent-to-review kernel. **Not an autonomous AI orchestrator yet.** Persists intents, enforces stage transitions, requires evidence and founder approval.
+This local state machine is retired. All public engine functions and CLI commands fail closed; no JSON is read or written. Existing task files are preserved untouched, including any historical approval strings, which are not authorization.
 
-Requires Node 20+. From `control/`:
+Use the existing engineering runtime and GitHub PR/CI evidence. No replacement scheduler, state engine, authentication scheme, or deployment path is added here. GitHub branch/environment protections remain a separate required administrator control.
 
-```bash
-npm test
-npm run run -- intent "Build evidence-backed ENCHANTE ONE onboarding"
-npm run run -- status <id>
-```
+Reproduce: `node --test control/tests/engine.test.mjs` from the repository root. Tests reject forged approval, every exported operation and CLI command, and verify preservation of an existing file.
 
-Tasks persist locally in `.ench/tasks/`. The `advance` command is a developer primitive, not proof of automated work. The local `ENCH_ACTOR=founder` flag is **not authentication**; never use it for production approval.
-
-Next: authenticated control surface, real isolated Codex adapter, GitHub PR + CI integration, browser QA and audit logs. Never claim autonomous execution before an end-to-end run.
+Acceptance: no local transition/mutation/approval authority; no data deletion; no merge/deployment. Risk: old callers now receive a deliberate retirement error and must use the existing runtime.

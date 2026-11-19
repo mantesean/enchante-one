@@ -1,10 +1,9 @@
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
-const states=['proposed','specified','ready','running','verification','review','approved','released','failed'];
-export function validateIntent(intent){if(typeof intent!=='string'||intent.trim().length<12)throw Error('Intent must contain at least 12 characters');return intent.trim();}
-export function createTask(intent){return {id:randomUUID(),intent:validateIntent(intent),state:'proposed',createdAt:new Date().toISOString(),events:[{state:'proposed',at:new Date().toISOString()}],checks:{},approval:null};}
-export function transition(task,next,{evidence,actor='system'}={}){if(!states.includes(next))throw Error('Unknown state');const allowed={proposed:['specified','failed'],specified:['ready','failed'],ready:['running','failed'],running:['verification','failed'],verification:['review','running','failed'],review:['approved','running','failed'],approved:['released','failed'],released:[],failed:['ready']};if(!allowed[task.state].includes(next))throw Error(`Invalid transition ${task.state} -> ${next}`);if(next==='review'&&!evidence)throw Error('Review requires verification evidence');if(next==='approved'&&actor!=='founder')throw Error('Founder approval required');if(next==='released'&&task.approval!=='founder')throw Error('Release requires recorded founder approval');return {...task,state:next,approval:next==='approved'?'founder':task.approval,events:[...task.events,{state:next,actor,at:new Date().toISOString(),...(evidence?{evidence}:{})}]};}
-export async function saveTask(task,dir='.ench/tasks'){await mkdir(dir,{recursive:true});await writeFile(join(dir,`${task.id}.json`),JSON.stringify(task,null,2)+'\n',{flag:'wx'});}
-export async function loadTask(id,dir='.ench/tasks'){if(!/^[0-9a-f-]{36}$/.test(id))throw Error('Invalid task ID');return JSON.parse(await readFile(join(dir,`${id}.json`),'utf8'));}
-export async function updateTask(task,dir='.ench/tasks'){await writeFile(join(dir,`${task.id}.json`),JSON.stringify(task,null,2)+'\n');}
+/** Retired prototype. GitHub and the existing runtime own execution and approval. */
+export const RETIRED = 'ENCH CONTROL prototype retired: use the existing runtime and GitHub review; local state cannot authorize execution, merge or deployment.';
+function retired() { throw new Error(RETIRED); }
+export const validateIntent = retired;
+export const createTask = retired;
+export const transition = retired;
+export const saveTask = retired;
+export const loadTask = retired;
+export const updateTask = retired;
