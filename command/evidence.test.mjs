@@ -1,0 +1,132 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { collect, assess, outcome, render, safeUrl, prNumber } from './evidence.mjs';
+import { fixture } from './fixtures.mjs';
+test('exact current provenance is evidence ready, never merge permission', () => {
+  assert.equal(outcome(fixture()), 0);
+  assert.match(render(fixture()), /oprávněním ke sloučení/);
+});
+for (const [name, change] of Object.entries({
+  missingArtifact: s => s.artifacts = [], expiredArtifact: s => s.artifacts[0].expired = true,
+  wrongPR: s => s.runs[0].pull_requests[0].number = 6, noPR: s => s.runs[0].pull_requests = [],
+  wrongBase: s => s.runs[0].pull_requests[0].base.sha = 'c'.repeat(40), movedBase: s => s.prEnd.base.sha = 'c'.repeat(40),
+  newerAtEnd: s => s.runsEnd.push({ ...s.runsEnd[0], id: 43, run_number: 3 }),
+  stale: s => s.checks[0].head_sha = 'b'.repeat(40), empty: s => s.checks = [],
+  failure: s => s.checks[0].conclusion = 'failure', pending: s => s.checks[0].status = 'in_progress', skipped: s => s.jobs[0].conclusion = 'skipped',
+  spoof: s => s.checks[0].app.id = 1, workflow: s => s.workflow.path = 'other.yml', workflowId: s => s.runs[0].workflow_id = 8,
+  job: s => s.jobs[0].check_run_url = 'https://evil.test/check-runs/9', attempt: s => s.jobs[0].run_attempt = 2,
+  rerun: s => s.runEnd.run_attempt = 2, latest: s => s.runs.push({ ...s.runs[0], id: 43, run_number: 3, status: 'queued' }),
+  moved: s => s.prEnd.head.sha = 'b'.repeat(40), draft: s => s.pr.draft = true,
+  self: s => s.reviews[0].user.login = 'Author', staleReview: s => s.reviews[0].commit_id = 'old',
+  dismissed: s => s.reviews.push({ ...s.reviews[0], id: 2, state: 'DISMISSED' }),
+  changes: s => s.reviews.push({ ...s.reviews[0], id: 2, state: 'CHANGES_REQUESTED' }),
+  otherChanges: s => s.reviews.push({ ...s.reviews[0], id: 2, user: { login: 'other', type: 'User' }, state: 'CHANGES_REQUESTED' }),
+})) test(`blocked: ${name}`, () => { const s = fixture(); change(s); assert.equal(outcome(s), 2); });
+test('comments do not cancel an effective review; subsequent approval resolves request', () => {
+  const s = fixture(); s.reviews.push({ ...s.reviews[0], id: 2, state: 'COMMENTED' }); assert.equal(assess(s).review, true);
+  s.reviews.push({ ...s.reviews[0], id: 3, state: 'CHANGES_REQUESTED' }, { ...s.reviews[0], id: 4 }); assert.equal(assess(s).review, true);
+});
+test('partial collection fails closed and still renders', async () => {
+  const s = await collect(5, async path => { if (path.endsWith('/pulls/5')) return fixture().pr; throw Error('secret must not leak'); });
+  assert.equal(outcome(s), 1); assert.match(render(s), /Sběr selhal/); assert.doesNotMatch(JSON.stringify(s), /secret/);
+});
+test('pagination completes or fails closed at the bounded cap', async () => {
+  let pages = 0;
+  const s = await collect(5, async path => {
+    if (path.endsWith('/pulls/5')) return fixture().pr;
+    if (path.includes('/reviews?')) { pages++; return Array(100).fill(fixture().reviews[0]); }
+    if (path.includes('check-runs?')) return { check_runs: [] };
+    return {};
+  });
+  assert.equal(pages, 20); assert.equal(outcome(s), 1); assert.equal(s.reviews, null);
+});
+test('malicious HTML and URLs remain inert, PR body omitted', () => {
+  const s = fixture(); s.pr.title = '<img src=x onerror=alert(1)>'; s.pr.body = 'RAW BODY SECRET'; s.reviews[0].user.login = '<script>bad()</script>'; s.reviews[0].html_url = 'javascript:alert(1)';
+  const html = render(s); assert.doesNotMatch(html, /<img|<script|RAW BODY SECRET|href="javascript/); assert.match(html, /&lt;img/);
+  for (const u of ['https://github.com.evil.test/mantesean/enchante-one/pull/5', 'https://github.com/other/repo/pull/5', 'https://github.com/mantesean/enchante-one/pull/5?x=bad', 'https://github.com/mantesean/enchante-one/pull/5/../../evil', 'http://github.com/mantesean/enchante-one/pull/5']) assert.equal(safeUrl(u), null);
+  for (const n of ['0','-1','1;whoami','1.2','9007199254740993']) assert.throws(() => prNumber(n));
+});
+test('reported total_count mismatch is incomplete, never green', async () => {
+  const s = await collect(5, async path => {
+    if (path.endsWith('/pulls/5')) return fixture().pr;
+    if (path.includes('check-runs?')) return { check_runs: [], total_count: 101 };
+    if (path.includes('/reviews?')) return [];
+    return {};
+  });
+  assert.equal(s.checks, null); assert.equal(outcome(s), 1);
+});
+test('latest submitted review wins even when its id is older', () => {
+  const s = fixture();
+  s.reviews.push({ ...s.reviews[0], id: 2, state: 'CHANGES_REQUESTED', submitted_at: '2026-11-19T10:00:00Z' });
+  assert.equal(assess(s).review, true);
+  delete s.reviews[0].submitted_at;
+  assert.equal(assess(s).review, false);
+});
+for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) test(`authorized review: ${association}`, () => {
+  const s = fixture(); s.reviews[0].author_association = association;
+  assert.equal(assess(s).review, true);
+});
+for (const association of ['NONE', 'CONTRIBUTOR', undefined]) test(`outside or unknown review: ${association}`, () => {
+  const s = fixture(); s.reviews[0].author_association = association;
+  assert.equal(assess(s).review, false); assert.equal(outcome(s), 2);
+});
+test('Bot approval cannot pass even with authorized association', () => {
+  const s = fixture(); s.reviews[0].user.type = 'Bot';
+  assert.equal(assess(s).review, false);
+});
+for (const field of ['runs', 'runsEnd']) {
+  for (const association of [[], [{ number: 6, head: { sha: 'a'.repeat(40) }, base: { sha: 'b'.repeat(40) } }]]) {
+    test(`newer failed ${field} with unknown or wrong PR never borrows older success: ${association.length}`, () => {
+      const s = fixture();
+      s[field].push({ ...s.runs[0], id: 43, run_number: 3, conclusion: 'failure', pull_requests: association });
+      assert.equal(assess(s).pilot, false); assert.equal(outcome(s), 2);
+    });
+  }
+}
+test('latest successful run still requires association in each observation', () => {
+  for (const field of ['runs', 'runsEnd', 'runEnd']) {
+    const s = fixture();
+    (Array.isArray(s[field]) ? s[field][0] : s[field]).pull_requests = [];
+    assert.equal(assess(s).pilot, false);
+  }
+});
+for (const [name, change] of Object.entries({
+  closed: s => s.pr.state = 'closed', closedAtEnd: s => s.prEnd.state = 'closed',
+  artifactRun: s => s.artifacts[0].workflow_run.id = 999,
+  artifactSHA: s => s.artifacts[0].workflow_run.head_sha = 'c'.repeat(40),
+  artifactEmpty: s => s.artifacts[0].size_in_bytes = 0,
+})) test(`additional blocked evidence: ${name}`, () => {
+  const s = fixture(); change(s); assert.equal(outcome(s), 2);
+});
+for (const [name, change] of Object.entries({
+  baseRepo: p => p.base.repo.full_name = 'other/repo', privateRepo: p => p.base.repo.private = true,
+  headSHA: p => p.head.sha = 'invalid', baseSHA: p => p.base.sha = 'invalid',
+})) test(`collector rejects invalid target: ${name}`, async () => {
+  const pr = fixture().pr; change(pr); const paths = [];
+  const s = await collect(5, async path => { paths.push(path); return pr; });
+  assert.deepEqual(paths, ['repos/mantesean/enchante-one/pulls/5']);
+  assert.equal(outcome(s), 1);
+});
+test('happy collection uses exact GET paths and supports a stacked PR base', async () => {
+  const f = fixture(); f.pr.base.ref = 'feat/orchestration-pilot';
+  const root = 'repos/mantesean/enchante-one';
+  const pulls = `${root}/pulls/5`;
+  const runs = `${root}/actions/workflows/7/runs?head_sha=${f.pr.head.sha}&event=pull_request&per_page=100&page=1`;
+  const responses = new Map([
+    [pulls, f.pr], [`${root}/actions/workflows/ci.yml`, f.workflow],
+    [`${root}/commits/${f.pr.head.sha}/check-runs?filter=latest&per_page=100&page=1`, { check_runs: f.checks, total_count: 1 }],
+    [`${pulls}/reviews?per_page=100&page=1`, f.reviews],
+    [runs, { workflow_runs: f.runs, total_count: 1 }],
+    [`${root}/actions/runs/42/attempts/1/jobs?per_page=100&page=1`, { jobs: f.jobs, total_count: 1 }],
+    [`${root}/actions/runs/42/artifacts?per_page=100&page=1`, { artifacts: f.artifacts, total_count: 1 }],
+    [`${root}/actions/runs/42`, f.runEnd],
+  ]);
+  const paths = [];
+  const s = await collect(5, async path => {
+    paths.push(path); assert.ok(responses.has(path), `Unexpected path: ${path}`);
+    return structuredClone(responses.get(path));
+  });
+  assert.deepEqual(paths, [...responses.keys(), runs, pulls]);
+  assert.deepEqual(s.failures, []); assert.equal(outcome(s), 0);
+  assert.equal(s.prEnd.base.ref, 'feat/orchestration-pilot');
+});

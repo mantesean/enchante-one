@@ -55,3 +55,9 @@ The Google font dependency was removed; the UI uses system fonts. Registry
 inspection confirmed the original Next 16.4.6, React 19.3.0 and Tailwind 4.3.3
 versions were available. Tailwind uses its PostCSS integration. No paid API or
 external model integration is included.
+
+## ENCH COMMAND evidence adapter
+
+See [commands and limitations](command/README.md) and the [dated operating protocol](docs/orchestration/OPERATING-PROTOCOL-2026-11-19.md). This local read-only surface is separate from the customer application.
+
+[ENCH COMMAND: execution evidence, independent Claude and Grok reviews](docs/orchestration/COMMAND-EVIDENCE-2026-11-19.md). Full production release gates remain open.
