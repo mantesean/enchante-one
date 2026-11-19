@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "tsx --test tests/domain.test.ts",
+    "test": "tsx --test tests/domain.test.ts && node --test command/*.test.mjs",
     "test:browser": "playwright test"
   },
   "dependencies": {
