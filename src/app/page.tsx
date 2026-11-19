@@ -1,86 +1,105 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { normalizeDomain } from "../lib/domain";
 
-const FOUNDING_ACCESS_PRICE = "$990";
+const checklist = [
+  { title: "Describe your customer and goal", detail: "Write who you serve, the problem you solve, and one outcome you want to improve." },
+  { title: "Review your homepage manually", detail: "Open your website yourself. Check whether a visitor can understand your offer and find the next step." },
+  { title: "Collect evidence before deciding", detail: "Record page URLs, observation dates and customer feedback. Separate observations from assumptions before choosing one small change." },
+];
+
+type Submission = { domain: string; recordedAt: string };
 
 export default function Home() {
   const [domain, setDomain] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [submission, setSubmission] = useState<Submission | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLHeadingElement>(null);
+  const changingDomain = useRef(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!domain) return;
-    setLoading(true);
-    setTimeout(() => {
-      setProfile({
-        name: domain.replace(/\..*$/, "").replace(/[-_]/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
-        domain: domain,
-        description: "Company identified from public web presence. Further analysis available in Founding Access.",
-        insights: [
-          { title: "Web conversion signal", detail: "Public homepage analysis suggests opportunity to clarify primary call-to-action.", source: "Public page structure" },
-          { title: "Content freshness", detail: "Limited recent public content detected. Opportunity for consistent authority building.", source: "Public signals" },
-          { title: "Competitive context", detail: "Peers in the space show stronger digital presence in key channels.", source: "Public comparison" }
-        ]
-      });
-      setLoading(false);
-    }, 1200);
-  };
+  useEffect(() => {
+    if (submission) resultRef.current?.focus();
+    else if (changingDomain.current) {
+      inputRef.current?.focus();
+      changingDomain.current = false;
+    }
+  }, [submission]);
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const result = normalizeDomain(domain);
+    if (!result.ok) {
+      setError(result.error);
+      inputRef.current?.focus();
+      return;
+    }
+    setError("");
+    setSubmission({ domain: result.domain, recordedAt: new Date().toISOString() });
+  }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-6">
-      <div className="max-w-xl w-full text-center space-y-10">
-        <div>
-          <h1 className="text-5xl font-light tracking-tight mb-3">ENCHANTE ONE</h1>
-          <p className="text-zinc-400 text-lg">The intelligent operating layer for your company.</p>
-        </div>
-
-        {!profile ? (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <input
-              type="text"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="yourcompany.com"
-              className="w-full bg-transparent border-b border-zinc-700 text-2xl py-3 text-center focus:outline-none focus:border-white transition"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-8 py-3 bg-white text-black rounded-full text-sm font-medium tracking-wide hover:bg-zinc-200 transition disabled:opacity-50"
-            >
-              {loading ? "Analyzing..." : "See your company"}
-            </button>
+    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-6 py-12">
+      <div className="max-w-xl w-full space-y-10">
+        <header className="text-center">
+          <h1 className="text-4xl sm:text-5xl font-light tracking-tight mb-3">ENCHANTE ONE</h1>
+          <p className="text-zinc-400 text-lg">A starting point for understanding your company.</p>
+        </header>
+        {!submission ? (
+          <form onSubmit={handleSubmit} noValidate className="space-y-6 text-center">
+            <div className="text-sm text-zinc-300 space-y-2">
+              <p>Website analysis is unavailable in this pilot.</p>
+              <p>No website will be fetched and no company analysis will be performed. Enter a domain to prepare a manual checklist.</p>
+            </div>
+            <div>
+              <label htmlFor="domain" className="block text-sm font-medium">Company domain</label>
+              <input ref={inputRef} id="domain" type="text" value={domain}
+                onChange={(event) => { setDomain(event.target.value); setError(""); }}
+                placeholder="yourcompany.com" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                maxLength={2048} required aria-invalid={Boolean(error)}
+                aria-describedby={error ? "domain-help domain-error" : "domain-help"}
+                className="w-full bg-transparent border-b border-zinc-600 text-2xl py-3 text-center focus:outline-none focus:border-white" />
+              <p id="domain-help" className="text-sm text-zinc-400 mt-3">Public domain or HTTP(S) URL. Paths are removed. No credentials, ports, IP addresses or local names.</p>
+              {error && <p id="domain-error" role="alert" className="text-sm text-red-300 mt-3">{error}</p>}
+            </div>
+            <button type="submit" className="px-8 py-3 bg-white text-black rounded-full text-sm font-medium hover:bg-zinc-200">Prepare manual checklist</button>
+            <p className="text-xs text-zinc-400">Your entry stays in this page’s memory and is cleared on reload. Domain ownership and availability are not verified.</p>
           </form>
         ) : (
-          <div className="text-left space-y-8 bg-zinc-950 border border-zinc-800 rounded-2xl p-8">
+          <section className="space-y-8 bg-zinc-950 border border-zinc-800 rounded-2xl p-6 sm:p-8" aria-labelledby="result-title">
             <div>
-              <h2 className="text-2xl font-light">{profile.name}</h2>
-              <p className="text-zinc-500 text-sm mt-1">{profile.domain}</p>
-              <p className="mt-4 text-zinc-300 leading-relaxed">{profile.description}</p>
+              <h2 id="result-title" ref={resultRef} tabIndex={-1} className="text-2xl font-light">Your manual starting point</h2>
+              <p className="text-zinc-300 mt-3">No website fetched. No company analysis performed.</p>
             </div>
-            <div className="space-y-4">
-              <h3 className="text-xs uppercase tracking-widest text-zinc-500">Opportunities</h3>
-              {profile.insights.map((ins: any, i: number) => (
-                <div key={i} className="border-l border-zinc-700 pl-4">
-                  <p className="font-medium">{ins.title}</p>
-                  <p className="text-sm text-zinc-400 mt-1">{ins.detail}</p>
-                  <p className="text-xs text-zinc-600 mt-1">Source: {ins.source}</p>
+            <section aria-labelledby="facts-title" className="text-sm text-zinc-300 space-y-2">
+              <h3 id="facts-title" className="font-medium text-white">What we know</h3>
+              <p className="break-all">Domain you entered: <strong>{submission.domain}</strong></p>
+              <p>Source: your input, normalized locally. This is not a verified company fact.</p>
+              <p>Recorded in this session: <time dateTime={submission.recordedAt}>{submission.recordedAt}</time></p>
+              <p>Confidence: domain syntax accepted only; ownership, availability and company identity are unknown.</p>
+            </section>
+            <section aria-labelledby="checklist-title" className="space-y-4">
+              <h3 id="checklist-title" className="font-medium">Manual next-step checklist</h3>
+              <p className="text-sm text-zinc-400">General prompts, not findings or tailored recommendations.</p>
+              {checklist.map((item, index) => (
+                <div key={item.title} className="border-l border-zinc-600 pl-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-white" />
+                    <span><span className="font-medium">{index + 1}. {item.title}</span><span className="block text-sm text-zinc-300 mt-1">{item.detail}</span></span>
+                  </label>
                 </div>
               ))}
-            </div>
-            <div className="pt-4 border-t border-zinc-800">
-              <p className="text-sm text-zinc-400 mb-4">Unlock the full intelligence, recommended next action, and founding company status.</p>
-              <button className="w-full py-3 bg-white text-black rounded-full text-sm font-medium">
-                Founding Access · {FOUNDING_ACCESS_PRICE}
-              </button>
-              <p className="text-xs text-zinc-600 mt-3 text-center">Limited to 50 founding companies. Includes 12 months of updates and lifetime founding rate.</p>
-            </div>
-          </div>
+              <div className="text-xs text-zinc-400 space-y-2">
+                <p>Source for every step: ONE’s general onboarding checklist, shown at the session timestamp above. No website evidence was used.</p>
+                <p>Confidence for every step: applicability to your company is unassessed.</p>
+                <p>Limitations: these prompts do not establish problems, priorities or likely results. Verify your own evidence before acting. Checklist progress is not saved.</p>
+              </div>
+            </section>
+            <button type="button" onClick={() => { changingDomain.current = true; setSubmission(null); }} className="w-full py-3 bg-white text-black rounded-full text-sm font-medium hover:bg-zinc-200">Change domain</button>
+          </section>
         )}
       </div>
-    </div>
+    </main>
   );
 }
