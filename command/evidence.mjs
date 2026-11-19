@@ -40,7 +40,7 @@ export async function collect(number, get = ghGet) {
   }
   s.pr = await read(`${root}/pulls/${number}`);
   const sha = s.pr?.head?.sha;
-  if (/^[a-f0-9]{40}$/.test(sha) && s.pr?.base?.repo?.full_name === REPO && s.pr?.base?.repo?.private === false) {
+  if (/^[a-f0-9]{40}$/.test(sha) && /^[a-f0-9]{40}$/.test(s.pr?.base?.sha) && s.pr?.base?.repo?.full_name === REPO && s.pr?.base?.repo?.private === false) {
     s.workflow = await read(`${root}/actions/workflows/ci.yml`);
     s.checks = await list(`${root}/commits/${sha}/check-runs?filter=latest`, 'check_runs');
     s.reviews = await list(`${root}/pulls/${number}/reviews`);
@@ -60,8 +60,11 @@ export async function collect(number, get = ghGet) {
   return s;
 }
 function latestRun(s) {
-  return s.runs?.filter(r => r.head_sha === s.pr?.head?.sha && r.workflow_id === s.workflow?.id && r.event === 'pull_request' && r.pull_requests?.some(p => p.number === s.number && p.base?.sha === s.pr?.base?.sha && p.head?.sha === s.pr?.head?.sha))
+  return s.runs?.filter(r => r.head_sha === s.pr?.head?.sha && r.workflow_id === s.workflow?.id && r.event === 'pull_request')
     .sort((a,b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
+}
+function associatedRun(run, s) {
+  return run?.pull_requests?.some(p => p.number === s.number && p.base?.sha === s.pr?.base?.sha && p.head?.sha === s.pr?.head?.sha) === true;
 }
 export function assess(s) {
   const blockers = [...s.failures];
@@ -71,12 +74,13 @@ export function assess(s) {
   if (s.pr?.draft !== false || s.prEnd?.draft !== false) blockers.push('PR je draft nebo stav není známý.');
   if (s.pr?.state !== 'open' || s.prEnd?.state !== 'open') blockers.push('PR není ověřeno jako otevřené.');
   const run = latestRun(s);
+  const lastRun = latestRun({ ...s, runs: s.runsEnd });
   const jobs = s.jobs?.filter(j => j.name === 'verify');
   const job = jobs?.length === 1 ? jobs[0] : null;
   const check = s.checks?.find(c => job?.check_run_url === `https://api.github.com/${root}/check-runs/${c.id}`);
-  const pilot = s.workflow?.name === 'Pilot checks' && s.workflow?.path === '.github/workflows/ci.yml' &&
+  const pilot = associatedRun(run, s) && associatedRun(lastRun, s) && associatedRun(s.runEnd, s) && s.workflow?.name === 'Pilot checks' && s.workflow?.path === '.github/workflows/ci.yml' &&
     run?.path === '.github/workflows/ci.yml' && run?.status === 'completed' && run?.conclusion === 'success' &&
-    latestRun({ ...s, runs: s.runsEnd })?.id === run?.id && latestRun({ ...s, runs: s.runsEnd })?.run_attempt === run?.run_attempt &&
+    lastRun?.id === run?.id && lastRun?.run_attempt === run?.run_attempt &&
     s.runEnd?.workflow_id === s.workflow?.id && s.runEnd?.path === '.github/workflows/ci.yml' && s.runEnd?.id === run?.id && s.runEnd?.head_sha === sha && s.runEnd?.run_attempt === run?.run_attempt && s.runEnd?.status === 'completed' && s.runEnd?.conclusion === 'success' &&
     job?.run_id === run?.id && job?.head_sha === sha && job?.run_attempt === run?.run_attempt && job?.status === 'completed' && job?.conclusion === 'success' &&
     check?.name === 'verify' && check?.head_sha === sha && check?.app?.id === 15368 && check?.app?.slug === 'github-actions' && check?.status === 'completed' && check?.conclusion === 'success';
@@ -86,7 +90,7 @@ export function assess(s) {
   for (const r of [...(s.reviews ?? [])].sort((a,b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at) || a.id - b.id)) {
     if (r.user?.login && ['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(r.state)) effective.set(r.user.login.toLowerCase(), r);
   }
-  const independent = [...effective.values()].filter(r => r.user?.type === 'User' && r.user.login.toLowerCase() !== s.pr?.user?.login?.toLowerCase());
+  const independent = [...effective.values()].filter(r => r.user?.type === 'User' && ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(r.author_association) && r.user.login.toLowerCase() !== s.pr?.user?.login?.toLowerCase());
   const review = reviewTimesKnown && Boolean(s.pr?.user?.login) && Array.isArray(s.reviews) && independent.some(r => r.state === 'APPROVED' && r.commit_id === sha) && !independent.some(r => r.state === 'CHANGES_REQUESTED');
   if (!browserArtifacts(s, run).length) blockers.push('Chybí dostupná metadata browser-results archivu pro tento běh a SHA.');
   if (!review) blockers.push('Chybí aktuální nezávislá review bez nevyřešených požadavků na změny.');
