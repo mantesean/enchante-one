@@ -59,3 +59,5 @@ external model integration is included.
 ## ENCH COMMAND evidence adapter
 
 See [commands and limitations](command/README.md) and the [dated operating protocol](docs/orchestration/OPERATING-PROTOCOL-2026-11-19.md). This local read-only surface is separate from the customer application.
+
+[ENCH COMMAND: execution evidence, independent Claude and Grok reviews](docs/orchestration/COMMAND-EVIDENCE-2026-11-19.md). Full production release gates remain open.

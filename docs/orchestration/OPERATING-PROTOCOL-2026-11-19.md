@@ -55,3 +55,7 @@ Primary sources checked 2026-11-19:
 ## Costs and audit
 
 No new spend is authorized. Subscription quota consumption and dollar-equivalent usage remain unknown unless the provider exposes them; do not label them zero. Record session IDs, UTC timestamps, commits, checks, review results and interventions. Keep account identifiers and raw provider logs local. Public evidence must contain no credentials or private customer data. Existing source files and historical records are preserved; corrections use dated appendices.
+
+## Verified protection update — 2026-11-19 15:37:26 UTC
+
+The coordinated independent audit task configured protection on main. This supervisor separately re-fetched the authenticated GitHub protection endpoint successfully: required check `verify` pinned to GitHub Actions app 15368, strict/up-to-date checks, enforce_admins=true, one approving review, dismiss_stale_reviews=true, require_last_push_approval=true, required_conversation_resolution=true, force pushes=false and deletions=false. Earlier absence/404 observations and model statements are historical, preceding this change; they are preserved rather than overwritten. This task performed the confirming read, not the configuration change. A rejected unauthorized merge/push experiment and a production environment approval gate are not established by the GET response; issue #10 remains open. No merge or deployment occurred.
