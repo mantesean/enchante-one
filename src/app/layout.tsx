@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
-import "./globals.css";
 
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-});
+import { SiteFooter } from "@/components/SiteFooter";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ENCHANTE ONE",
@@ -14,8 +10,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geist.variable}>
-      <body className="bg-black text-white antialiased">{children}</body>
+    <html lang="en">
+      <body className="bg-black text-white antialiased min-h-screen flex flex-col">
+        <main className="flex-1 flex flex-col">{children}</main>
+        <SiteFooter />
+      </body>
     </html>
   );
 }
