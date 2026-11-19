@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import type { AnalyzeResult } from "@/lib/analyze";
 import type { InsightStatus } from "@/lib/insights";
@@ -24,8 +24,14 @@ function formatFetchedAt(iso: string) {
 }
 
 export default function Home() {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [domain, setDomain] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
+
+  useEffect(() => {
+    if (state.kind === "invalid" || state.kind === "idle") inputRef.current?.focus();
+    if (state.kind === "done") document.getElementById("observations-title")?.focus();
+  }, [state.kind]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,15 +61,17 @@ export default function Home() {
       <div className="max-w-xl w-full text-center space-y-10">
         <div>
           <h1 className="text-5xl font-light tracking-tight mb-3">ENCHANTE ONE</h1>
-          <p className="text-zinc-400 text-lg">The intelligent operating layer for your company.</p>
+          <p className="text-zinc-400 text-lg">Review public website evidence.</p>
         </div>
 
         {state.kind !== "done" && state.kind !== "unreachable" && (
-          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate aria-busy={loading}>
+            <p className="text-sm text-zinc-300">This preview checks static website signals only when retrieval is enabled. It does not perform a company audit or run AI agents.</p>
             <label htmlFor="domain" className="sr-only">
               Company domain
             </label>
             <input
+              ref={inputRef}
               id="domain"
               type="text"
               inputMode="url"
@@ -86,7 +94,7 @@ export default function Home() {
               disabled={loading}
               className="px-8 py-3 bg-white text-black rounded-full text-sm font-medium tracking-wide hover:bg-zinc-200 transition disabled:opacity-50"
             >
-              {loading ? "Reading the homepage…" : "See your company"}
+              {loading ? "Reading the homepage…" : "Check website evidence"}
             </button>
           </form>
         )}
@@ -114,7 +122,7 @@ function Result({ result, onReset }: { result: Extract<AnalyzeResult, { ok: true
   return (
     <div className="text-left space-y-8 bg-zinc-950 border border-zinc-800 rounded-2xl p-8">
       <div>
-        <h2 className="text-2xl font-light">{profile.name}</h2>
+        <h2 id="observations-title" tabIndex={-1} className="text-2xl font-light">{profile.name}</h2>
         <p className="text-zinc-500 text-sm mt-1 break-all">{profile.finalUrl}</p>
         <p className="mt-4 text-zinc-300 leading-relaxed">{profile.description}</p>
         <p className="text-xs text-zinc-600 mt-3">
