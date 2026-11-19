@@ -8,3 +8,6 @@ coverage
 *.log
 .vercel
 *.tsbuildinfo
+
+playwright-report/
+test-results/

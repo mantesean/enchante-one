@@ -15,6 +15,8 @@ export interface Insight {
   detail: string;
   evidence: string;
   sourceUrl: string;
+  observedAt: string;
+  limitation: string;
 }
 
 export interface Observation {
@@ -54,7 +56,7 @@ export function buildProfile(domain: string, finalUrl: string, page: Extracted, 
   };
 }
 
-type Candidate = Omit<Insight, "sourceUrl"> & { weight: number };
+type Candidate = Omit<Insight, "sourceUrl" | "observedAt" | "limitation"> & { weight: number };
 
 /** All candidate insights, unordered. Weight orders insights within the same status. */
 function candidates(o: Observation, now: Date): Candidate[] {
@@ -66,7 +68,7 @@ function candidates(o: Observation, now: Date): Candidate[] {
   if (!https) {
     out.push({
       id: "https",
-      title: "Site is not served over HTTPS",
+      title: "This response used HTTP",
       status: "issue",
       detail: o.usedHttpFallback
         ? "The HTTPS version did not respond, so we had to load the site over plain HTTP. Browsers mark such pages as “Not secure”."
@@ -77,7 +79,7 @@ function candidates(o: Observation, now: Date): Candidate[] {
   } else {
     out.push({
       id: "https",
-      title: "Served securely over HTTPS",
+      title: "This response used HTTPS",
       status: "good",
       detail: "The homepage loads over an encrypted connection.",
       evidence: `final URL ${o.finalUrl}`,
@@ -89,19 +91,19 @@ function candidates(o: Observation, now: Date): Candidate[] {
   if (page.ctas.length === 0) {
     out.push({
       id: "cta",
-      title: "No clear way to get in touch or buy",
+      title: "No supported CTA text detected in this response",
       status: "issue",
       detail:
-        "We found no contact, demo, booking, pricing, sign-up or buy link and no email/phone link on the homepage. Visitors ready to act have no obvious next step.",
+        "The static English-language heuristic found no matching link or button. Other languages, client-rendered content and unrecognized wording may contain a valid next step. Check the rendered page manually.",
       evidence: `no contact/demo/pricing/sign-up link among ${page.linkCount} links`,
       weight: 90,
     });
   } else {
     out.push({
       id: "cta",
-      title: "Visitors have a clear next step",
+      title: "CTA-like text found in the HTML",
       status: "good",
-      detail: `The homepage offers ${page.ctas.length === 1 ? "a call to action" : `${page.ctas.length} calls to action`}, e.g. “${page.ctas[0].text || page.ctas[0].href}”.`,
+      detail: `The HTML contains ${page.ctas.length} heuristic match(es), e.g. “${page.ctas[0].text || page.ctas[0].href}”. Visibility, usability and destination behavior have not been verified.`,
       evidence: page.ctas[0].evidence,
       weight: 40,
     });
@@ -111,9 +113,9 @@ function candidates(o: Observation, now: Date): Candidate[] {
   if (!page.title) {
     out.push({
       id: "title",
-      title: "Homepage has no title",
+      title: "No title detected in the response",
       status: "issue",
-      detail: "Search results and browser tabs fall back to the bare URL without a <title>.",
+      detail: "No title element was detected in this static response. Rendered content and search appearance were not checked.",
       evidence: "<title> missing",
       weight: 80,
     });
@@ -123,21 +125,21 @@ function candidates(o: Observation, now: Date): Candidate[] {
     if (len < 10 || len > 65) {
       out.push({
         id: "title",
-        title: len < 10 ? "Page title is very short" : "Page title is likely truncated in search",
+        title: len < 10 ? "Short title string detected" : "Long title string detected",
         status: "issue",
         detail:
           len < 10
-            ? `At ${len} characters the title says little about what the company does.`
-            : `At ${len} characters, search engines typically cut the title off around 60 characters.`,
+            ? `The title contains ${len} characters. Clarity has not been assessed.`
+            : `The title contains ${len} characters. Search rendering has not been assessed.`,
         evidence,
         weight: 50,
       });
     } else {
       out.push({
         id: "title",
-        title: "Clear page title",
+        title: "Title string detected",
         status: "good",
-        detail: `A ${len}-character title fits search results without truncation.`,
+        detail: `The title contains ${len} characters. This does not establish clarity or search appearance.`,
         evidence,
         weight: 30,
       });
@@ -150,7 +152,7 @@ function candidates(o: Observation, now: Date): Candidate[] {
       id: "description",
       title: "No meta description",
       status: "issue",
-      detail: "Search engines will improvise a snippet from page text, which you don’t control.",
+      detail: "No description meta tag was detected in this response. Search results were not checked.",
       evidence: "meta description missing",
       weight: 75,
     });
@@ -162,7 +164,7 @@ function candidates(o: Observation, now: Date): Candidate[] {
       status: len > 160 ? "info" : "good",
       detail:
         len > 160
-          ? `At ${len} characters it will likely be cut off in search results (~155–160 shown).`
+          ? `The description contains ${len} characters. Actual search appearance is unknown.`
           : `A ${len}-character summary is available for search results and link previews.`,
       evidence: `<meta name="description" content="${clip(page.metaDescription)}">`,
       weight: 25,
@@ -173,18 +175,18 @@ function candidates(o: Observation, now: Date): Candidate[] {
   if (!page.viewport) {
     out.push({
       id: "viewport",
-      title: "Not set up for mobile screens",
+      title: "No viewport meta tag detected",
       status: "issue",
-      detail: "Without a viewport meta tag, phones render the page zoomed-out like a desktop site.",
+      detail: "No viewport meta tag was detected. Mobile rendering was not tested.",
       evidence: "viewport meta missing",
       weight: 85,
     });
   } else {
     out.push({
       id: "viewport",
-      title: "Mobile viewport configured",
+      title: "Viewport meta tag detected",
       status: "good",
-      detail: "The page declares a responsive viewport for phones.",
+      detail: "A viewport meta tag was found; its correctness and mobile rendering were not tested.",
       evidence: `<meta name="viewport" content="${clip(page.viewport, 120)}">`,
       weight: 10,
     });
@@ -196,25 +198,25 @@ function candidates(o: Observation, now: Date): Candidate[] {
       id: "h1",
       title: "No main headline (H1)",
       status: "issue",
-      detail: "The homepage has no <h1>, so neither visitors nor search engines get a single clear statement of what you do.",
+      detail: "No H1 was detected in the static response. The rendered page may differ; message clarity was not assessed.",
       evidence: "no <h1> found",
       weight: 60,
     });
   } else if (page.h1.length > 1) {
     out.push({
       id: "h1",
-      title: "Several competing headlines",
+      title: "Multiple H1 elements detected",
       status: "info",
-      detail: `The homepage has ${page.h1.length} <h1> elements; one primary message is usually clearer.`,
+      detail: `The static response contains ${page.h1.length} H1 elements. Visual hierarchy was not tested.`,
       evidence: clip(`${page.h1.length} <h1>: ${page.h1.slice(0, 3).map((h) => `“${clip(h, 50)}”`).join(", ")}`),
       weight: 30,
     });
   } else {
     out.push({
       id: "h1",
-      title: "Clear main headline",
+      title: "One H1 element detected",
       status: "good",
-      detail: "The homepage leads with a single primary headline.",
+      detail: "One H1 element was detected. Visibility and clarity were not tested.",
       evidence: `<h1>${clip(page.h1[0], 120)}</h1>`,
       weight: 35,
     });
@@ -231,27 +233,27 @@ function candidates(o: Observation, now: Date): Candidate[] {
     if (stale) {
       out.push({
         id: "freshness",
-        title: "Site looks out of date",
+        title: "Older date string detected",
         status: "issue",
-        detail: `The newest date we could see on the page is ${d.value}. Visitors read stale dates as a sign the company is inactive.`,
+        detail: `The latest extracted date string is ${d.value}. It may describe copyright or an event; it does not establish company activity or update history.`,
         evidence: d.evidence,
         weight: 70,
       });
     } else if (fresh) {
       out.push({
         id: "freshness",
-        title: "Recently updated",
+        title: "Recent or future date string detected",
         status: "good",
-        detail: `The newest date visible on the page is ${d.value}.`,
+        detail: `The latest extracted date string is ${d.value}; its meaning and visibility are unverified.`,
         evidence: d.evidence,
         weight: 15,
       });
     } else {
       out.push({
         id: "freshness",
-        title: "Last visible update over a year ago",
+        title: "Date string older than one year",
         status: "info",
-        detail: `The newest date visible on the page is ${d.value}.`,
+        detail: `The latest extracted date string is ${d.value}; its meaning and visibility are unverified.`,
         evidence: d.evidence,
         weight: 15,
       });
@@ -271,9 +273,9 @@ function candidates(o: Observation, now: Date): Candidate[] {
   if (o.ms > 3000) {
     out.push({
       id: "speed",
-      title: "Slow first response",
+      title: "Response download duration above three seconds",
       status: "issue",
-      detail: `The homepage took ${(o.ms / 1000).toFixed(1)} s to download from our server. Slow pages lose visitors before they load.`,
+      detail: `The response took ${(o.ms / 1000).toFixed(1)} s to download from this server. This is not a browser performance or conversion measurement.`,
       evidence: `response ${o.ms} ms`,
       weight: 65,
     });
@@ -301,5 +303,5 @@ export function deriveInsights(o: Observation, now: Date = new Date()): Insight[
   return candidates(o, now)
     .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || b.weight - a.weight)
     .slice(0, MAX_INSIGHTS)
-    .map(({ id, title, status, detail, evidence }) => ({ id, title, status, detail, evidence, sourceUrl: o.finalUrl }));
+    .map(({ id, title, status, detail, evidence }) => ({ id, title, status, detail, evidence, sourceUrl: o.finalUrl, observedAt: now.toISOString(), limitation: "Static response only; no rendered-page, company, or business-outcome verification." }));
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FoundingAccessButton } from "@/components/FoundingAccessButton";
+
 import type { AnalyzeResult } from "@/lib/analyze";
 import type { InsightStatus } from "@/lib/insights";
 
@@ -29,7 +29,7 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!domain.trim()) return;
+    if (!domain.trim()) { setState({ kind: "invalid", message: "Enter a public company domain." }); return; }
     setState({ kind: "loading" });
     try {
       const res = await fetch("/api/analyze", {
@@ -139,6 +139,7 @@ function Result({ result, onReset }: { result: Extract<AnalyzeResult, { ok: true
                   </span>
                 </p>
                 <p className="text-sm text-zinc-400 mt-1 leading-relaxed">{ins.detail}</p>
+                <p className="text-sm text-zinc-400">{ins.limitation} Observed: {formatFetchedAt(ins.observedAt)}</p>
                 <p className="mt-2 text-xs text-zinc-500">
                   <span className="text-zinc-600">Evidence </span>
                   <code className="font-mono text-zinc-400 break-all">{ins.evidence}</code>
@@ -156,15 +157,10 @@ function Result({ result, onReset }: { result: Extract<AnalyzeResult, { ok: true
         </p>
       </div>
 
-      <div className="pt-4 border-t border-zinc-800">
-        <p className="text-sm text-zinc-400 mb-4">
-          Unlock the full intelligence, recommended next action, and founding company status.
-        </p>
-        <FoundingAccessButton />
-        <p className="text-xs text-zinc-600 mt-3 text-center">
-          Limited to 50 founding companies. Includes 12 months of updates and lifetime founding rate.
-        </p>
-      </div>
+      <section className="pt-4 border-t border-zinc-800 space-y-3">
+        <h3 className="font-medium">Choose one observation to verify</h3>
+        <p className="text-sm text-zinc-300">Open the source page, check the observation in a browser, and record what you found before deciding on a change. These are static HTML signals, not a company audit.</p>
+      </section>
 
       <button onClick={onReset} className="text-sm text-zinc-500 hover:text-white transition">
         ← Analyze another domain

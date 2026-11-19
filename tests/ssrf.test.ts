@@ -94,7 +94,7 @@ describe("safeFetch refusals", () => {
       seen.push(req.url.toString());
       return {
         status: 302,
-        headers: { location: "http://evil.example.com/admin" },
+        headers: { location: "https://evil.example.com/admin" },
         readBody: async () => Buffer.alloc(0),
         discard: () => {},
       };
@@ -106,7 +106,7 @@ describe("safeFetch refusals", () => {
   it("refuses a redirect to an IP literal in a private range", async () => {
     const transport: Transport = async () => ({
       status: 301,
-      headers: { location: "http://127.0.0.1:8080/" },
+      headers: { location: "https://127.0.0.1:8080/" },
       readBody: async () => Buffer.alloc(0),
       discard: () => {},
     });

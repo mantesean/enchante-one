@@ -1,6 +1,6 @@
 import { extractPage } from "./extract";
 import { buildProfile, deriveInsights, type Insight, type Profile } from "./insights";
-import { safeFetch, SafeFetchError, type SafeFetchOptions, type SafeResponse } from "./ssrf";
+import { safeFetch, SafeFetchError, type SafeFetchOptions, type SafeResponse, DEFAULT_TIMEOUT_MS } from "./ssrf";
 
 export type AnalyzeErrorCode = "unreachable" | "timeout" | "blocked" | "refused" | "too_large" | "http_error";
 
@@ -42,12 +42,11 @@ function mapError(domain: string, err: unknown): AnalyzeResult {
 
 /** Never retry around an SSRF refusal or an oversize body. */
 function isFinal(err: unknown): boolean {
-  return err instanceof SafeFetchError && ["blocked_address", "bad_scheme", "bad_url", "too_large"].includes(err.code);
+  return err instanceof SafeFetchError && ["blocked_address", "bad_scheme", "bad_url", "too_large", "tls", "timeout"].includes(err.code);
 }
 
 /**
- * Fetch https://domain/ (then https://www.domain/ if the apex has no DNS), falling back to
- * http://domain/. Returns the first successful response and why https failed, if it did.
+ * Fetch https://domain/ (then https://www.domain/ if the apex has no DNS), without HTTP downgrade. One shared deadline spans all attempts.
  */
 async function fetchHomepage(
   domain: string,
@@ -67,16 +66,7 @@ async function fetchHomepage(
       if (isFinal(err)) throw err;
     }
   }
-  // A timeout already consumed the budget; don't double the wait.
-  if (httpsErr instanceof SafeFetchError && httpsErr.code === "timeout") throw httpsErr;
-  try {
-    const res = await safeFetch(`http://${domain}/`, opts);
-    const httpsError = httpsErr instanceof Error ? httpsErr.message : "https failed";
-    return { res, usedHttpFallback: true, httpsError };
-  } catch (err) {
-    if (isFinal(err)) throw err;
-    throw httpsErr;
-  }
+  throw httpsErr;
 }
 
 export async function analyzeDomain(
@@ -84,10 +74,18 @@ export async function analyzeDomain(
   opts: SafeFetchOptions & { now?: Date } = {},
 ): Promise<AnalyzeResult> {
   let fetched: Awaited<ReturnType<typeof fetchHomepage>>;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  opts.signal?.addEventListener("abort", abort, {once:true});
+  if (opts.signal?.aborted) controller.abort();
+  const timer = setTimeout(abort, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
-    fetched = await fetchHomepage(domain, opts);
+    fetched = await fetchHomepage(domain, {...opts, signal:controller.signal});
   } catch (err) {
     return mapError(domain, err);
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", abort);
   }
   const { res, usedHttpFallback, httpsError } = fetched;
 

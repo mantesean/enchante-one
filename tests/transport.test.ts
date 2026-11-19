@@ -67,26 +67,6 @@ describe("nodeTransport", () => {
 
 describe("analyzeDomain", () => {
   const resolver: Resolver = async () => [{ address: "93.184.215.14", family: 4 }];
-  const NOW = new Date("2026-11-18T12:00:00Z");
-
-  it("falls back to http when https fails and records it", async () => {
-    const transport: Transport = async (req) => {
-      if (req.url.protocol === "https:") throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
-      return {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
-        readBody: async () => Buffer.from("<title>Old Co</title><body>© 2019</body>"),
-        discard: () => {},
-      };
-    };
-    const r = await analyzeDomain("old.example.com", { resolver, transport, now: NOW });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.fetch.usedHttpFallback).toBe(true);
-    expect(r.fetch.httpsError).toMatch(/ECONNREFUSED/);
-    expect(r.profile.name).toBe("Old Co");
-    expect(r.insights[0]).toMatchObject({ id: "https", status: "issue", evidence: "final URL http://old.example.com/" });
-  });
 
   it("reports unreachable sites honestly with no insights", async () => {
     const transport: Transport = async () => {

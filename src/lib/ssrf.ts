@@ -283,7 +283,7 @@ export const nodeTransport: Transport = (req) =>
           status: res.statusCode ?? 0,
           headers: flattenHeaders(res.headers),
           readBody: () => readCapped(stream, req.maxBytes, req.url.toString()),
-          discard: () => res.destroy(),
+          discard: () => { stream.destroy(); res.destroy(); r.destroy(); },
         });
       },
     );
@@ -341,6 +341,25 @@ export async function resolveAndValidate(url: URL, resolver: Resolver = defaultR
   return addrs.find((a) => a.family === 4) ?? addrs[0];
 }
 
+/** Bound even injected/non-abortable stages and dispose late transport responses. */
+function withinDeadline<T>(work: () => Promise<T>, signal: AbortSignal, url: string, late?: (value: T) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = () => new SafeFetchError("timeout", "Request timed out", url);
+    if (signal.aborted) { reject(timeout()); return; }
+    let settled = false;
+    const abort = () => { if (!settled) { settled = true; signal.removeEventListener("abort", abort); reject(timeout()); } };
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve().then(() => { if (signal.aborted) throw timeout(); return work(); }).then(value => {
+      signal.removeEventListener("abort", abort);
+      if (settled) { late?.(value); return; }
+      settled = true; resolve(value);
+    }, error => {
+      signal.removeEventListener("abort", abort);
+      if (!settled) { settled = true; reject(error); }
+    });
+  });
+}
+
 export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}): Promise<SafeResponse> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -360,6 +379,7 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const onOuterAbort = () => controller.abort();
   opts.signal?.addEventListener("abort", onOuterAbort, { once: true });
+  if (opts.signal?.aborted) controller.abort();
   const started = performance.now();
   const redirects: SafeResponse["redirects"] = [];
 
@@ -371,12 +391,12 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
       if (current.username || current.password) {
         throw new SafeFetchError("bad_url", "URLs with credentials are not allowed", current.toString());
       }
-      const address = await resolveAndValidate(current, resolver);
+      const address = await withinDeadline(() => resolveAndValidate(current, resolver), controller.signal, current.toString());
       if (controller.signal.aborted) throw new SafeFetchError("timeout", "Request timed out", current.toString());
 
       let res: TransportResponse;
       try {
-        res = await transport({
+        res = await withinDeadline(() => transport({
           url: current,
           address,
           headers: {
@@ -387,7 +407,7 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
           },
           signal: controller.signal,
           maxBytes,
-        });
+        }), controller.signal, current.toString(), response => response.discard());
       } catch (err) {
         throw classifyNetError(err, current.toString(), controller.signal.aborted);
       }
@@ -404,6 +424,9 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
         } catch {
           throw new SafeFetchError("bad_url", "Invalid redirect location", current.toString());
         }
+        if (current.protocol === "https:" && next.protocol !== "https:") {
+          throw new SafeFetchError("bad_scheme", "HTTPS redirects must remain HTTPS", next.toString());
+        }
         redirects.push({ from: current.toString(), status: res.status, to: next.toString() });
         current = next; // re-validated at the top of the loop
         continue;
@@ -411,8 +434,9 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
 
       let buf: Buffer;
       try {
-        buf = await res.readBody();
+        buf = await withinDeadline(() => res.readBody(), controller.signal, current.toString());
       } catch (err) {
+        res.discard();
         throw classifyNetError(err, current.toString(), controller.signal.aborted);
       }
       return {
